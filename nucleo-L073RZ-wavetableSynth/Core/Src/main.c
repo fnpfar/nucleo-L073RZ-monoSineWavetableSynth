@@ -34,6 +34,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
+#define WAVE_TABLE_SAMPLES 2000
 #define UART_BUFFER_SIZE 100
 
 /* USER CODE END PD */
@@ -112,24 +113,31 @@ int main(void)
 	HAL_UART_Transmit(&huart2, uart_buf, strlen((char*) uart_buf),
 	HAL_MAX_DELAY);
 
-	HAL_TIM_Base_Start(&htim6);
-	//HAL_TIM_Base_Start_IT(&htim6)
-
-	//HAL_DAC_Start(&hdac, DAC_CHANNEL_1);
-
-	uint16_t dac_dma_buffer[882]; // wave to play
-	for (int n = 0; n < 882; n++) { // generates a 12-bit sine wave, 1 period
-		double sinn = sin(4 * (2 * M_PI * n) / 882);
-		dac_dma_buffer[n] = (uint16_t) ((sinn + 1.15) * (3080 / 2));
+	// Sine wave generation and storage in memory
+	uint16_t dac_dma_buffer[WAVE_TABLE_SAMPLES]; // wave to play
+	for (int n = 0; n < WAVE_TABLE_SAMPLES; n++) { // generates a 12-bit sine wave, 1 period
+		double sinn = sin((2 * M_PI * n) / WAVE_TABLE_SAMPLES);
+		dac_dma_buffer[n] = (uint16_t) ((sinn + 1.15) * (3080 / 2)); // amplitude & offset adjust
 	}
 
-	HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, (uint32_t*)dac_dma_buffer, 882, DAC_ALIGN_12B_R);
+	strcpy((char*) uart_buf,
+			"A sinusoidal wave has been stored in memory. Press USER button to change the frequency.\r\n");
+	HAL_UART_Transmit(&huart2, uart_buf, strlen((char*) uart_buf),
+	HAL_MAX_DELAY);
+
+	HAL_TIM_Base_Start(&htim6); // starts timer 6
+	//HAL_TIM_Base_Start_IT(&htim6) // with interrupts
+
+	//HAL_DAC_Start(&hdac, DAC_CHANNEL_1); // start DAC
+	HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, (uint32_t*)dac_dma_buffer, WAVE_TABLE_SAMPLES, DAC_ALIGN_12B_R);
+	set_tone_note(0); // sets the frequency
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 	while (1) {
+		// nothing here
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -358,12 +366,56 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+
+void set_TIM6_frequency(uint32_t freq){
+	uint32_t pclk1 = HAL_RCC_GetPCLK1Freq(); /* Get PCLK1 frequency */
+	__HAL_TIM_SET_PRESCALER(&htim6,0); // sets TIM6 prescaler to 0 (disabled)
+	uint32_t counter_period = pclk1/freq;
+	__HAL_TIM_SET_AUTORELOAD(&htim6, counter_period);
+}
+
+void set_tone_frequency(uint32_t freq){
+	set_TIM6_frequency(freq * WAVE_TABLE_SAMPLES);
+}
+
+/* Calls set_tone_frequency() with the frequencies of a non-tempered C scale*/
+void set_tone_note(uint16_t note){
+	switch (note)
+	{
+	    case 0:
+	    	set_tone_frequency(262);
+	        break;
+	    case 1:
+	    	set_tone_frequency(294);
+	        break;
+	    case 2:
+	    	set_tone_frequency(330);
+	        break;
+	    case 3:
+	    	set_tone_frequency(349);
+	        break;
+	    case 4:
+	    	set_tone_frequency(392);
+	        break;
+	    case 5:
+	    	set_tone_frequency(440);
+	        break;
+	    case 6:
+	    	set_tone_frequency(494);
+	        break;
+	    case 7:
+	    	set_tone_frequency(523);
+	        break;
+	    default:
+	    	set_tone_frequency(440);
+	}
+}
+
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
 	if (GPIO_Pin == B1_Pin) {
-		button_counter = (button_counter + 1) % 7;
-		//__HAL_TIM_SET_PRESCALER(&htim6,button_counter);
-		__HAL_TIM_SET_AUTORELOAD(&htim6, button_counter + 1);
+		button_counter = (button_counter + 1) % 8;
+		set_tone_note(button_counter);
 	}
 
 }
